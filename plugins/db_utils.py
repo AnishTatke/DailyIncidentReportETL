@@ -86,7 +86,8 @@ def check_table_exists(cursor, table_name = 'incident_reports'):
         raise
 
 def fetch_latest_data(cursor, table_name = 'incident_reports'):
-    fetch_query = f"SELECT * FROM IF EXISTS {table_name} ORDER BY datetime DESC LIMIT 1;"
+    fetch_query = f"SELECT * FROM {table_name} ORDER BY datetime DESC LIMIT 1;"
+
     if not check_table_exists(cursor, table_name):
         logging.warning(f"Table {table_name} does not exist.")
         return None

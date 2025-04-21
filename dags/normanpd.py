@@ -43,7 +43,7 @@ with DAG(
             with create_connection(conn_str) as connection:
                 cursor = connection.cursor()
                 latest_date = fetch_latest_data(cursor)
-                logging.info(f"Latest date in DB: {latest_date}")
+                logging.info(f"Latest date in DB: {latest_date[1]}")
                 return latest_date[1] if latest_date else None
 
         except Exception as e:
@@ -53,12 +53,13 @@ with DAG(
     @task.branch(
         task_id="should_fetch_new_report"
     )
-    def should_fetch_new_report(latest_date: str, **kwargs):
+    def should_fetch_new_report(latest_date, **kwargs):
         execution_date = kwargs['execution_date'].date()
-
+        print(f"Execution date: {execution_date}, type: {type(execution_date)}")
+        
         if latest_date:
-            db_date = datetime.strptime(latest_date, "%Y-%m-%d").date()
-            if db_date > execution_date:
+            db_date = latest_date.date()
+            if db_date >= execution_date:
                 return "skip_pipeline"
             
         return "fetch_latest_report"
@@ -89,8 +90,12 @@ with DAG(
         os.makedirs(save_dir, exist_ok=True)
         logging.info("Start fetching")
         while retries < max_retries:
-            endpoint = "{}/{}_daily_incident_summary.pdf".format(date_to_check.strftime("%Y-%m"), date_to_check.strftime("%Y-%m-%d"))
-            save_path = "{}/{}_daily_incident_summary.pdf".format(save_dir, date_to_check.strftime("%Y-%m-%d"))
+            endpoint = "{}/{}_daily_incident_summary.pdf".format(
+                date_to_check.strftime("%Y-%m"), date_to_check.strftime("%Y-%m-%d")
+            )
+            save_path = "{}/{}_daily_incident_summary.pdf".format(
+                save_dir, date_to_check.strftime("%Y-%m-%d")
+            )
 
             try:
                 logging.info(f"Attempt {retries + 1}: Fetching from {endpoint}")
@@ -104,7 +109,7 @@ with DAG(
                     logging.info(f"Downloaded {save_path}")
                     return save_path 
             except Exception as e:
-                logging.warning(f"Request failed for {endpoint}: {e}")
+                logging.warning(f"Request failed for {endpoint}")
 
             logging.info(f"Error: HTTPError\n Trying for previous day")
             date_to_check -= timedelta(days=1)
@@ -199,12 +204,15 @@ with DAG(
         df['Latitude'] = None
         df['Longitude'] = None
         location_coords = asyncio.run(get_lat_long(df))
+        logging.info(f"Geocoded {len(location_coords)} locations")
 
         df['Latitude'] = df['Location'].map(lambda loc: location_coords.get(loc, (np.nan, np.nan))[0])
         df['Longitude'] = df['Location'].map(lambda loc: location_coords.get(loc, (np.nan, np.nan))[1])
-                
+
         df['Latitude'].fillna(df['Latitude'].median(), inplace=True)
         df['Longitude'].fillna(df['Longitude'].median(), inplace=True)
+        logging.info(f"Filled missing coordinates with median values")
+
         file_path = save_csv(df, df.columns, file_path, ('.csv', '_geocoded.csv'))
         return file_path
 
